@@ -1,0 +1,106 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "clone",
+        "repository": "My-App-Repo-Name",
+        "branch": "main",
+        "folderPath": "/tmp/repo_scan_logs",
+        "authentication": {
+          "type": "credentials",
+          "credentialId": "YOUR_GITHUB_CREDENTIAL_ID"
+        },
+        "options": {}
+      },
+      "name": "1. Clone Target Repo",
+      "type": "n8n-nodes-base.gitHub",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "gitHubApi": "YOUR_GITHUB_CREDENTIAL_NAME"
+      }
+    },
+    {
+      "parameters": {
+        "command": "grep -roh 'logger\\.\\(info\\|debug\\|warn\\|error\\)' /tmp/repo_scan_logs --include='*.java'",
+        "options": {
+          "runInShell": true
+        },
+        "executionPath": {
+          "value": "/tmp",
+          "type": "string"
+        }
+      },
+      "name": "2. Execute GREP Scan",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const items = $input.all();\nconst grepResult = items[0].json.stdout;\n\n// Split the output into an array of individual matches (one per line)\nconst logMatches = grepResult.split('\\n').filter(line => line.trim() !== '');\n\n// Define a pattern to count by level\nconst counts = {\n    'total_count': logMatches.length,\n    'info_count': 0,\n    'debug_count': 0,\n    'warn_count': 0,\n    'error_count': 0\n};\n\n// Loop through the matches and count by log level\nlogMatches.forEach(match => {\n    if (match.includes('logger.info')) {\n        counts.info_count++;\n    } else if (match.includes('logger.debug')) {\n        counts.debug_count++;\n    } else if (match.includes('logger.warn')) {\n        counts.warn_count++;\n    } else if (match.includes('logger.error')) {\n        counts.error_count++;\n    }\n});\n\n// The result object to be saved as JSON\nconst resultObject = {\n    repository: \"My-App-Repo-Name\",\n    scan_timestamp: new Date().toISOString(),\n    ...counts\n};\n\n// Create a buffer containing the JSON string\nconst jsonBuffer = Buffer.from(JSON.stringify(resultObject, null, 2));\n\n// Return the buffer as a file (binary) item\nreturn [{\n    json: {},\n    binary: {\n        file: {\n            data: jsonBuffer.toString('base64'),\n            mimeType: 'application/json',\n            fileName: 'log4j_audit_report.json',\n        },\n    },\n}];",
+        "options": {}
+      },
+      "name": "3. Count & Prepare JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "/tmp/{{ $json.fileName }}",
+        "options": {
+          "isBinary": true
+        }
+      },
+      "name": "4. Write JSON File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Start": [
+      [
+        "1. Clone Target Repo"
+      ]
+    ],
+    "1. Clone Target Repo": [
+      [
+        "2. Execute GREP Scan"
+      ]
+    ],
+    "2. Execute GREP Scan": [
+      [
+        "3. Count & Prepare JSON"
+      ]
+    ],
+    "3. Count & Prepare JSON": [
+      [
+        "4. Write JSON File"
+      ]
+    ]
+  }
+}
